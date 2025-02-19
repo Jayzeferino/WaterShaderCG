@@ -303,10 +303,14 @@ class FirstPersonCameraDemo {
         box2.receiveShadow = true;
         this.scene_.add(box2);
 
+        let waterTex = new THREE.TextureLoader().load('resources/freepbr/waterpool.jpg');
+        const material = new THREE.MeshStandardMaterial({
+            map: waterTex
+        });
 
         const mirror = new THREE.Mesh(
             new THREE.BoxGeometry(10, 5, 0),
-            concreteMaterial);
+            material);
         mirror.position.set(0, 3, 0);
         mirror.castShadow = true;
         mirror.receiveShadow = true;
