@@ -127,7 +127,6 @@ class FirstPersonCamera {
         this.updateRotation_(timeElapsedS);
         this.updateCamera_(timeElapsedS);
         this.updateTranslation_(timeElapsedS);
-        this.updateHeadBob_(timeElapsedS);
         this.input_.update(timeElapsedS);
     }
 
@@ -135,7 +134,6 @@ class FirstPersonCamera {
         this.camera_.quaternion.copy(this.rotation_);
         this.camera_.position.copy(this.translation_);
         this.camera_.position.y += Math.sin(this.headBobTimer_ * 10) * 1.5;
-
         const forward = new THREE.Vector3(0, 0, -1);
         forward.applyQuaternion(this.rotation_);
 
@@ -158,18 +156,7 @@ class FirstPersonCamera {
         this.camera_.lookAt(closest);
     }
 
-    updateHeadBob_(timeElapsedS) {
-        if (this.headBobActive_) {
-            const wavelength = Math.PI;
-            const nextStep = 1 + Math.floor(((this.headBobTimer_ + 0.000001) * 10) / wavelength);
-            const nextStepTime = nextStep * wavelength / 10;
-            this.headBobTimer_ = Math.min(this.headBobTimer_ + timeElapsedS, nextStepTime);
 
-            if (this.headBobTimer_ == nextStepTime) {
-                this.headBobActive_ = false;
-            }
-        }
-    }
 
     updateTranslation_(timeElapsedS) {
         const forwardVelocity = (this.input_.key(KEYS.w) ? 1 : 0) + (this.input_.key(KEYS.s) ? -1 : 0)
@@ -233,11 +220,6 @@ class FirstPersonCameraDemo {
     }
 
     initializeDemo_() {
-        // this.controls_ = new FirstPersonControls(
-        //     this.camera_, this.threejs_.domElement);
-        // this.controls_.lookSpeed = 0.8;
-        // this.controls_.movementSpeed = 5;
-
         this.fpsCamera_ = new FirstPersonCamera(this.camera_, this.objects_);
     }
 
@@ -263,7 +245,7 @@ class FirstPersonCameraDemo {
         const near = 1.0;
         const far = 1000.0;
         this.camera_ = new THREE.PerspectiveCamera(fov, aspect, near, far);
-        this.camera_.position.set(0, 2, 0);
+        this.camera_.position.set(0, 8, 0);
 
         this.scene_ = new THREE.Scene();
 
@@ -303,15 +285,33 @@ class FirstPersonCameraDemo {
         plane.rotation.x = -Math.PI / 2;
         this.scene_.add(plane);
 
+        const concreteMaterial = this.loadMaterial_('concrete3-', 4);
+
         const box = new THREE.Mesh(
             new THREE.BoxGeometry(4, 4, 4),
-            this.loadMaterial_('vintage-tile1_', 0.2));
-        box.position.set(10, 2, 0);
+            concreteMaterial);
+        box.position.set(1, 2, -16);
         box.castShadow = true;
         box.receiveShadow = true;
         this.scene_.add(box);
 
-        const concreteMaterial = this.loadMaterial_('concrete3-', 4);
+        const box2 = new THREE.Mesh(
+            new THREE.BoxGeometry(4, 4, 4),
+            concreteMaterial);
+        box2.position.set(1, 2.5, 16);
+        box2.castShadow = true;
+        box2.receiveShadow = true;
+        this.scene_.add(box2);
+
+
+        const mirror = new THREE.Mesh(
+            new THREE.BoxGeometry(10, 5, 0),
+            concreteMaterial);
+        mirror.position.set(0, 3, 0);
+        mirror.castShadow = true;
+        mirror.receiveShadow = true;
+        this.scene_.add(mirror);
+
 
         const wall1 = new THREE.Mesh(
             new THREE.BoxGeometry(100, 100, 4),
@@ -348,7 +348,7 @@ class FirstPersonCameraDemo {
         // Create Box3 for each mesh in the scene so that we can
         // do some easy intersection tests.
         const meshes = [
-            plane, box, wall1, wall2, wall3, wall4];
+            plane, box, wall1, wall2, wall3, mirror, wall4];
 
         this.objects_ = [];
 
