@@ -107,7 +107,6 @@ class InputController {
     }
 };
 
-
 class FirstPersonCamera {
     constructor(camera, objects) {
         this.camera_ = camera;
@@ -154,6 +153,7 @@ class FirstPersonCamera {
         }
 
         this.camera_.lookAt(closest);
+
     }
 
 
@@ -201,8 +201,7 @@ class FirstPersonCamera {
     }
 }
 
-
-class FirstPersonCameraDemo {
+class FirstPersonCameraFps {
     constructor() {
         this.initialize_();
     }
@@ -212,29 +211,29 @@ class FirstPersonCameraDemo {
         this.initializeLights_();
         this.initializeScene_();
         this.initializePostFX_();
-        this.initializeDemo_();
+        this.initializeFpsCam_();
 
         this.previousRAF_ = null;
         this.raf_();
         this.onWindowResize_();
     }
 
-    initializeDemo_() {
+    initializeFpsCam_() {
         this.fpsCamera_ = new FirstPersonCamera(this.camera_, this.objects_);
     }
 
     initializeRenderer_() {
-        this.threejs_ = new THREE.WebGLRenderer({
+        this.renderer_ = new THREE.WebGLRenderer({
             antialias: false,
         });
-        this.threejs_.shadowMap.enabled = true;
-        this.threejs_.shadowMap.type = THREE.PCFSoftShadowMap;
-        this.threejs_.setPixelRatio(window.devicePixelRatio);
-        this.threejs_.setSize(window.innerWidth, window.innerHeight);
-        this.threejs_.physicallyCorrectLights = true;
-        this.threejs_.outputEncoding = THREE.sRGBEncoding;
+        this.renderer_.shadowMap.enabled = true;
+        this.renderer_.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer_.setPixelRatio(window.devicePixelRatio);
+        this.renderer_.setSize(window.innerWidth, window.innerHeight);
+        this.renderer_.physicallyCorrectLights = true;
+        this.renderer_.outputEncoding = THREE.sRGBEncoding;
 
-        document.body.appendChild(this.threejs_.domElement);
+        document.body.appendChild(this.renderer_.domElement);
 
         window.addEventListener('resize', () => {
             this.onWindowResize_();
@@ -246,12 +245,21 @@ class FirstPersonCameraDemo {
         const far = 1000.0;
         this.camera_ = new THREE.PerspectiveCamera(fov, aspect, near, far);
         this.camera_.position.set(0, 8, 0);
-
         this.scene_ = new THREE.Scene();
+
+
+        this.renderTarget_ = new THREE.WebGLRenderTarget(10 * window.innerWidth, 5 * window.innerHeight);
+        this.mirrorCamera_ = new THREE.PerspectiveCamera(fov, this.renderTarget_.width / this.renderTarget_.height, near, far);
+        this.mirrorCamera_.position.set(0, 3, 0);
+
+
+        this.mirrorScene_ = new THREE.Scene();
 
         this.uiCamera_ = new THREE.OrthographicCamera(
             -1, 1, 1 * aspect, -1 * aspect, 1, 1000);
         this.uiScene_ = new THREE.Scene();
+
+
     }
 
     initializeScene_() {
@@ -269,7 +277,7 @@ class FirstPersonCameraDemo {
         this.scene_.background = texture;
 
         const mapLoader = new THREE.TextureLoader();
-        const maxAnisotropy = this.threejs_.capabilities.getMaxAnisotropy();
+        const maxAnisotropy = this.renderer_.capabilities.getMaxAnisotropy();
         const checkerboard = mapLoader.load('resources/checkerboard.png');
         checkerboard.anisotropy = maxAnisotropy;
         checkerboard.wrapS = THREE.RepeatWrapping;
@@ -303,56 +311,39 @@ class FirstPersonCameraDemo {
         box2.receiveShadow = true;
         this.scene_.add(box2);
 
-        let waterTex = new THREE.TextureLoader().load('resources/freepbr/waterpool.jpg');
-        const material = new THREE.MeshStandardMaterial({
-            map: waterTex
+        this.waterTex = this.loadMaterialInRenderTarget_('Water-', 4);
+        // this.waterTex = new THREE.TextureLoader().load('resources/freepbr/waterpool.jpg');
+        // this.waterTex.wrapS = THREE.RepeatWrapping;
+        // this.waterTex.wrapT = THREE.RepeatWrapping;
+        const waterMaterial = new THREE.MeshStandardMaterial({
+            map: this.waterTex,
+            transparent: true,
+            opacity: 0.8
         });
+
+        const waterplane = new THREE.Mesh(
+            new THREE.BoxGeometry(10, 5, 0.01),
+            this.waterTex
+        );
+
+        const camMaterial = new THREE.MeshPhongMaterial({
+            map: this.renderTarget_.texture,
+        });
+
+        waterplane.position.set(0, 3, 0);
+        this.scene_.add(waterplane);
 
         const mirror = new THREE.Mesh(
             new THREE.BoxGeometry(10, 5, 0),
-            material);
+            camMaterial
+        );
         mirror.position.set(0, 3, 0);
-        mirror.castShadow = true;
-        mirror.receiveShadow = true;
+
         this.scene_.add(mirror);
-
-
-        const wall1 = new THREE.Mesh(
-            new THREE.BoxGeometry(100, 100, 4),
-            concreteMaterial);
-        wall1.position.set(0, -40, -50);
-        wall1.castShadow = true;
-        wall1.receiveShadow = true;
-        this.scene_.add(wall1);
-
-        const wall2 = new THREE.Mesh(
-            new THREE.BoxGeometry(100, 100, 4),
-            concreteMaterial);
-        wall2.position.set(0, -40, 50);
-        wall2.castShadow = true;
-        wall2.receiveShadow = true;
-        this.scene_.add(wall2);
-
-        const wall3 = new THREE.Mesh(
-            new THREE.BoxGeometry(4, 100, 100),
-            concreteMaterial);
-        wall3.position.set(50, -40, 0);
-        wall3.castShadow = true;
-        wall3.receiveShadow = true;
-        this.scene_.add(wall3);
-
-        const wall4 = new THREE.Mesh(
-            new THREE.BoxGeometry(4, 100, 100),
-            concreteMaterial);
-        wall4.position.set(-50, -40, 0);
-        wall4.castShadow = true;
-        wall4.receiveShadow = true;
-        this.scene_.add(wall4);
 
         // Create Box3 for each mesh in the scene so that we can
         // do some easy intersection tests.
-        const meshes = [
-            plane, box, wall1, wall2, wall3, mirror, wall4];
+        const meshes = [plane, box, mirror, waterplane];
 
         this.objects_ = [];
 
@@ -372,6 +363,10 @@ class FirstPersonCameraDemo {
         this.sprite_.position.set(0, 0, -10);
 
         this.uiScene_.add(this.sprite_);
+
+        // Mirror
+
+        this.mirrorScene_ = this.scene_;
     }
 
     initializeLights_() {
@@ -404,7 +399,7 @@ class FirstPersonCameraDemo {
 
     loadMaterial_(name, tiling) {
         const mapLoader = new THREE.TextureLoader();
-        const maxAnisotropy = this.threejs_.capabilities.getMaxAnisotropy();
+        const maxAnisotropy = this.renderer_.capabilities.getMaxAnisotropy();
 
         const metalMap = mapLoader.load('resources/freepbr/' + name + 'metallic.png');
         metalMap.anisotropy = maxAnisotropy;
@@ -431,11 +426,77 @@ class FirstPersonCameraDemo {
         roughnessMap.wrapT = THREE.RepeatWrapping;
         roughnessMap.repeat.set(tiling, tiling);
 
+        const lightMap = mapLoader.load('resources/freepbr/' + name + 'light.png');
+        roughnessMap.anisotropy = maxAnisotropy;
+        roughnessMap.wrapS = THREE.RepeatWrapping;
+        roughnessMap.wrapT = THREE.RepeatWrapping;
+        roughnessMap.repeat.set(tiling, tiling);
+
+        const displacementMap = mapLoader.load('resources/freepbr/' + name + 'displacement.png');
+        roughnessMap.anisotropy = maxAnisotropy;
+        roughnessMap.wrapS = THREE.RepeatWrapping;
+        roughnessMap.wrapT = THREE.RepeatWrapping;
+        roughnessMap.repeat.set(tiling, tiling);
+
         const material = new THREE.MeshStandardMaterial({
             metalnessMap: metalMap,
             map: albedo,
             normalMap: normalMap,
             roughnessMap: roughnessMap,
+            displacementMap: displacementMap,
+            lightMap: lightMap
+        });
+
+        return material;
+    }
+
+    updateTexture() {
+
+    }
+
+    loadMaterialInRenderTarget_(name, tiling) {
+        const mapLoader = new THREE.TextureLoader();
+        const maxAnisotropy = this.renderer_.capabilities.getMaxAnisotropy();
+
+        this.metalMap = mapLoader.load('resources/freepbr/' + name + 'metallic.jpg');
+        this.metalMap.anisotropy = maxAnisotropy;
+        this.metalMap.wrapS = THREE.RepeatWrapping;
+        this.metalMap.wrapT = THREE.RepeatWrapping;
+        this.metalMap.repeat.set(tiling, tiling);
+
+        const albedo = this.renderTarget_.texture;
+
+        this.normalMap = mapLoader.load('resources/freepbr/' + name + 'normal.jpg');
+        this.normalMap.anisotropy = maxAnisotropy;
+        this.normalMap.wrapS = THREE.RepeatWrapping;
+        this.normalMap.wrapT = THREE.RepeatWrapping;
+        this.normalMap.repeat.set(tiling, tiling);
+
+        this.roughnessMap = mapLoader.load('resources/freepbr/' + name + 'roughness.jpg');
+        this.roughnessMap.anisotropy = maxAnisotropy;
+        this.roughnessMap.wrapS = THREE.RepeatWrapping;
+        this.roughnessMap.wrapT = THREE.RepeatWrapping;
+        this.roughnessMap.repeat.set(tiling, tiling);
+
+        this.lightMap = mapLoader.load('resources/freepbr/' + name + 'light.jpg');
+        this.lightMap.anisotropy = maxAnisotropy;
+        this.lightMap.wrapS = THREE.RepeatWrapping;
+        this.lightMap.wrapT = THREE.RepeatWrapping;
+        this.lightMap.repeat.set(tiling, tiling);
+
+        this.displacementMap = mapLoader.load('resources/freepbr/' + name + 'displacement.png');
+        this.displacementMap.anisotropy = maxAnisotropy;
+        this.displacementMap.wrapS = THREE.RepeatWrapping;
+        this.displacementMap.wrapT = THREE.RepeatWrapping;
+        this.displacementMap.repeat.set(tiling, tiling);
+
+        const material = new THREE.MeshStandardMaterial({
+            metalnessMap: this.metalMap,
+            map: albedo,
+            normalMap: this.normalMap,
+            roughnessMap: this.roughnessMap,
+            displacementMap: this.displacementMap,
+            lightMap: this.lightMap
         });
 
         return material;
@@ -448,13 +509,35 @@ class FirstPersonCameraDemo {
         this.camera_.aspect = window.innerWidth / window.innerHeight;
         this.camera_.updateProjectionMatrix();
 
+        // this.mirrorCamera_.aspect = window.innerWidth / window.innerHeight;
+        // this.mirrorCamera_.updateProjectionMatrix();
+
         this.uiCamera_.left = -this.camera_.aspect;
         this.uiCamera_.right = this.camera_.aspect;
         this.uiCamera_.updateProjectionMatrix();
 
-        this.threejs_.setSize(window.innerWidth, window.innerHeight);
+        this.renderer_.setSize(window.innerWidth, window.innerHeight);
     }
 
+
+    moveWater(timeElapsed) {
+        this.metalMap.offset.x += 0.09 * timeElapsed;
+        this.metalMap.offset.y += 0.01 * timeElapsed;
+
+
+
+        this.normalMap.offset.x += 0.09 * timeElapsed;
+        this.normalMap.offset.y += 0.01 * timeElapsed;
+
+        this.roughnessMap.offset.x += 0.09 * timeElapsed;
+        this.roughnessMap.offset.y += 0.01 * timeElapsed;
+
+        this.lightMap.offset.x += 0.09 * timeElapsed;
+        this.lightMap.offset.y += 0.01 * timeElapsed;
+
+        this.displacementMap.offset.x += 0.09 * timeElapsed;
+        this.displacementMap.offset.y += 0.01 * timeElapsed;
+    }
     raf_() {
         requestAnimationFrame((t) => {
             if (this.previousRAF_ === null) {
@@ -462,10 +545,13 @@ class FirstPersonCameraDemo {
             }
 
             this.step_(t - this.previousRAF_);
-            this.threejs_.autoClear = true;
-            this.threejs_.render(this.scene_, this.camera_);
-            this.threejs_.autoClear = false;
-            this.threejs_.render(this.uiScene_, this.uiCamera_);
+            this.renderer_.autoClear = true;
+            this.renderer_.setRenderTarget(this.renderTarget_);
+            this.renderer_.render(this.scene_, this.mirrorCamera_);
+            this.renderer_.setRenderTarget(null);
+            this.renderer_.render(this.scene_, this.camera_);
+            this.renderer_.autoClear = false;
+            this.renderer_.render(this.uiScene_, this.uiCamera_);
             this.previousRAF_ = t;
             this.raf_();
         });
@@ -476,12 +562,12 @@ class FirstPersonCameraDemo {
 
         // this.controls_.update(timeElapsedS);
         this.fpsCamera_.update(timeElapsedS);
+        this.mirrorCamera_.lookAt(this.camera_.position);
+        this.moveWater(timeElapsedS);
     }
 }
-
-
 let _APP = null;
 
 window.addEventListener('DOMContentLoaded', () => {
-    _APP = new FirstPersonCameraDemo();
+    _APP = new FirstPersonCameraFps();
 });
