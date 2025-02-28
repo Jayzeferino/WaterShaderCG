@@ -293,8 +293,8 @@ class FirstPersonCameraFps {
         plane.rotation.x = -Math.PI / 2;
         this.scene_.add(plane);
 
-        const concreteMaterial = this.loadMaterial_('concrete3-', 4);
 
+        const concreteMaterial = this.loadMaterial_('concrete3-', 4);
         const box = new THREE.Mesh(
             new THREE.BoxGeometry(4, 4, 4),
             concreteMaterial);
@@ -311,27 +311,29 @@ class FirstPersonCameraFps {
         box2.receiveShadow = true;
         this.scene_.add(box2);
 
-        this.waterTex = this.loadMaterialInRenderTarget_('Water-', 4);
+        // this.waterTex = this.loadMaterialInRenderTarget_('Water-', 5);
         // this.waterTex = new THREE.TextureLoader().load('resources/freepbr/waterpool.jpg');
         // this.waterTex.wrapS = THREE.RepeatWrapping;
         // this.waterTex.wrapT = THREE.RepeatWrapping;
-        const waterMaterial = new THREE.MeshStandardMaterial({
-            map: this.waterTex,
-            transparent: true,
-            opacity: 0.8
-        });
+        // const waterMaterial = new THREE.MeshPhongMaterial({
+        //     map: this.waterTex,
+        //     transparent: true,
+        //     opacity: 0.8
+        // });
 
-        const waterplane = new THREE.Mesh(
-            new THREE.BoxGeometry(10, 5, 0.01),
-            this.waterTex
-        );
+        // const waterplane = new THREE.Mesh(
+        //     new THREE.BoxGeometry(10, 5, 0.01),
+        //     waterMaterial
+        // );
+
+        // waterplane.position.set(0, 3, 0);
+        // this.scene_.add(waterplane);
 
         const camMaterial = new THREE.MeshPhongMaterial({
             map: this.renderTarget_.texture,
+            // normalMap: this.waterTex
         });
 
-        waterplane.position.set(0, 3, 0);
-        this.scene_.add(waterplane);
 
         const mirror = new THREE.Mesh(
             new THREE.BoxGeometry(10, 5, 0),
@@ -343,7 +345,7 @@ class FirstPersonCameraFps {
 
         // Create Box3 for each mesh in the scene so that we can
         // do some easy intersection tests.
-        const meshes = [plane, box, mirror, waterplane];
+        const meshes = [plane, box, mirror];
 
         this.objects_ = [];
 
@@ -458,22 +460,15 @@ class FirstPersonCameraFps {
         const mapLoader = new THREE.TextureLoader();
         const maxAnisotropy = this.renderer_.capabilities.getMaxAnisotropy();
 
-        this.metalMap = mapLoader.load('resources/freepbr/' + name + 'metallic.jpg');
-        this.metalMap.anisotropy = maxAnisotropy;
-        this.metalMap.wrapS = THREE.RepeatWrapping;
-        this.metalMap.wrapT = THREE.RepeatWrapping;
-        this.metalMap.repeat.set(tiling, tiling);
-
         const albedo = this.renderTarget_.texture;
 
         this.normalMap = mapLoader.load('resources/freepbr/' + name + 'normal.jpg');
-        this.normalMap.anisotropy = maxAnisotropy;
+
         this.normalMap.wrapS = THREE.RepeatWrapping;
         this.normalMap.wrapT = THREE.RepeatWrapping;
         this.normalMap.repeat.set(tiling, tiling);
 
         this.roughnessMap = mapLoader.load('resources/freepbr/' + name + 'roughness.jpg');
-        this.roughnessMap.anisotropy = maxAnisotropy;
         this.roughnessMap.wrapS = THREE.RepeatWrapping;
         this.roughnessMap.wrapT = THREE.RepeatWrapping;
         this.roughnessMap.repeat.set(tiling, tiling);
@@ -490,13 +485,13 @@ class FirstPersonCameraFps {
         this.displacementMap.wrapT = THREE.RepeatWrapping;
         this.displacementMap.repeat.set(tiling, tiling);
 
-        const material = new THREE.MeshStandardMaterial({
-            metalnessMap: this.metalMap,
+        const material = new THREE.MeshPhongMaterial({
             map: albedo,
             normalMap: this.normalMap,
             roughnessMap: this.roughnessMap,
             displacementMap: this.displacementMap,
-            lightMap: this.lightMap
+            lightMap: this.lightMap,
+            color: 0x16a3da
         });
 
         return material;
@@ -519,24 +514,19 @@ class FirstPersonCameraFps {
         this.renderer_.setSize(window.innerWidth, window.innerHeight);
     }
 
-
     moveWater(timeElapsed) {
-        this.metalMap.offset.x += 0.09 * timeElapsed;
-        this.metalMap.offset.y += 0.01 * timeElapsed;
 
+        this.normalMap.offset.x += timeElapsed;
+        this.normalMap.offset.y += timeElapsed;
 
+        this.roughnessMap.offset.x += timeElapsed;
+        this.roughnessMap.offset.y += timeElapsed;
 
-        this.normalMap.offset.x += 0.09 * timeElapsed;
-        this.normalMap.offset.y += 0.01 * timeElapsed;
+        this.lightMap.offset.x += timeElapsed;
+        this.lightMap.offset.y += timeElapsed;
 
-        this.roughnessMap.offset.x += 0.09 * timeElapsed;
-        this.roughnessMap.offset.y += 0.01 * timeElapsed;
-
-        this.lightMap.offset.x += 0.09 * timeElapsed;
-        this.lightMap.offset.y += 0.01 * timeElapsed;
-
-        this.displacementMap.offset.x += 0.09 * timeElapsed;
-        this.displacementMap.offset.y += 0.01 * timeElapsed;
+        this.displacementMap.offset.x += timeElapsed;
+        this.displacementMap.offset.y += timeElapsed;
     }
     raf_() {
         requestAnimationFrame((t) => {
@@ -563,7 +553,9 @@ class FirstPersonCameraFps {
         // this.controls_.update(timeElapsedS);
         this.fpsCamera_.update(timeElapsedS);
         this.mirrorCamera_.lookAt(this.camera_.position);
-        this.moveWater(timeElapsedS);
+        // this.waterTex.offset.x += timeElapsedS * 0.01;
+        // this.waterTex.offset.y += timeElapsedS * 0.05;
+
     }
 }
 let _APP = null;
