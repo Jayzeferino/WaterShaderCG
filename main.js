@@ -563,3 +563,59 @@ let _APP = null;
 window.addEventListener('DOMContentLoaded', () => {
     _APP = new FirstPersonCameraFps();
 });
+
+
+
+// Criando um material de shader personalizado
+const fresnelShader = new THREE.ShaderMaterial({
+    uniforms: {
+        skybox: { value: null },      // Textura do ambiente (cubeMap)
+        textureMap: { value: null },  // Textura da superfície
+        cameraPosition: { value: new THREE.Vector3() },
+        reflectance: { value: 0.02 } // F0 para vidro (0.02 a 0.04)
+    },
+    vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        varying vec3 vWorldPosition;
+
+        void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+            vViewDir = normalize(cameraPosition - vWorldPosition);
+
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform samplerCube skybox;
+        uniform sampler2D textureMap;
+        uniform vec3 cameraPosition;
+        uniform float reflectance;
+
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        varying vec3 vWorldPosition;
+
+        void main() {
+            vec3 N = normalize(vNormal);
+            vec3 V = normalize(vViewDir);
+            
+            // Reflexão da câmera no ambiente
+            vec3 R = reflect(-V, N);
+            vec3 reflectionColor = texture(skybox, R).rgb;
+            
+            // Fresnel usando a equação de Schlick
+            float cosTheta = max(dot(N, V), 0.0);
+            float fresnel = reflectance + (1.0 - reflectance) * pow(1.0 - cosTheta, 5.0);
+
+            // Cor da textura base
+            vec3 refractionColor = texture(textureMap, vWorldPosition.xy).rgb;
+
+            // Mistura entre reflexão e refração
+            vec3 finalColor = mix(refractionColor, reflectionColor, fresnel);
+
+            gl_FragColor = vec4(finalColor, 1.0);
+        }
+    `
+});
