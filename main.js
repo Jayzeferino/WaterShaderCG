@@ -156,8 +156,6 @@ class FirstPersonCamera {
 
     }
 
-
-
     updateTranslation_(timeElapsedS) {
         const forwardVelocity = (this.input_.key(KEYS.w) ? 1 : 0) + (this.input_.key(KEYS.s) ? -1 : 0)
         const strafeVelocity = (this.input_.key(KEYS.a) ? 1 : 0) + (this.input_.key(KEYS.d) ? -1 : 0)
@@ -248,7 +246,7 @@ class FirstPersonCameraFps {
         this.scene_ = new THREE.Scene();
 
 
-        this.renderTarget_ = new THREE.WebGLRenderTarget(10 * window.innerWidth, 5 * window.innerHeight);
+        this.renderTarget_ = new THREE.WebGLRenderTarget( window.innerWidth,  0.7*window.innerHeight);
         this.mirrorCamera_ = new THREE.PerspectiveCamera(fov, this.renderTarget_.width / this.renderTarget_.height, near, far);
         this.mirrorCamera_.position.set(0, 3, 0);
 
@@ -293,7 +291,6 @@ class FirstPersonCameraFps {
         plane.rotation.x = -Math.PI / 2;
         this.scene_.add(plane);
 
-
         const concreteMaterial = this.loadMaterial_('concrete3-', 4);
         const box = new THREE.Mesh(
             new THREE.BoxGeometry(4, 4, 4),
@@ -329,10 +326,41 @@ class FirstPersonCameraFps {
         // waterplane.position.set(0, 3, 0);
         // this.scene_.add(waterplane);
 
-        const camMaterial = new THREE.MeshPhongMaterial({
-            map: this.renderTarget_.texture,
-            // normalMap: this.waterTex
+        const camMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                uTexture: { type: 't', value: this.renderTarget_.texture },
+                uOpacity: { value: 1.0 } // Define a transparência (0.0 totalmente transparente, 1.0 totalmente opaco)
+                ,cameraPosition: { value: new THREE.Vector3() }
+            },
+              vertexShader:/*glsl*/`
+
+                precision highp float;
+
+                out vec2 vUv;
+                void main() {
+                  vUv = uv;
+                
+                  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+              `,
+              fragmentShader:/*glsl*/`
+
+                precision highp float;
+                out vec4 FragColor;
+
+                uniform sampler2D uTexture;
+                uniform float uOpacity;
+                in vec3 vReflect;
+                in vec2 vUv;
+                void main() {
+                    vec4 color = texture2D(uTexture, vUv);
+                    FragColor = vec4(color.rgb, color.a * uOpacity); // Aplica a transparência
+                }
+              `,
+              transparent: false 
+              
         });
+        camMaterial.glslVersion = THREE.GLSL3;
 
 
         const mirror = new THREE.Mesh(
