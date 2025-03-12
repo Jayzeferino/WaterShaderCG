@@ -8,6 +8,8 @@ const KEYS = {
     's': 83,
     'w': 87,
     'd': 68,
+    'space': 32,
+    'Lshift': 16
 };
 
 function clamp(x, a, b) {
@@ -159,6 +161,7 @@ class FirstPersonCamera {
     updateTranslation_(timeElapsedS) {
         const forwardVelocity = (this.input_.key(KEYS.w) ? 1 : 0) + (this.input_.key(KEYS.s) ? -1 : 0)
         const strafeVelocity = (this.input_.key(KEYS.a) ? 1 : 0) + (this.input_.key(KEYS.d) ? -1 : 0)
+        const upVelocity = this.input_.key(KEYS.space) ? 1 : -1;
 
         const qx = new THREE.Quaternion();
         qx.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.phi_);
@@ -171,8 +174,12 @@ class FirstPersonCamera {
         left.applyQuaternion(qx);
         left.multiplyScalar(strafeVelocity * timeElapsedS * 10);
 
+        const up = new THREE.Vector3(0, 1, 0); // Alterado para subir corretamente
+        up.multiplyScalar(upVelocity * timeElapsedS * 5);
+
         this.translation_.add(forward);
         this.translation_.add(left);
+        // this.translation_.add(up); adiciona voar
 
         if (forwardVelocity != 0 || strafeVelocity != 0) {
             this.headBobActive_ = true;
@@ -222,7 +229,7 @@ class FirstPersonCameraFps {
 
     initializeRenderer_() {
         this.renderer_ = new THREE.WebGLRenderer({
-            antialias: false,
+            antialias: false, stencil: true
         });
         this.renderer_.shadowMap.enabled = true;
         this.renderer_.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -239,17 +246,19 @@ class FirstPersonCameraFps {
 
         const fov = 60;
         const aspect = 1920 / 1080;
-        const near = 1.0;
+        const near = 0.1;
         const far = 1000.0;
         this.camera_ = new THREE.PerspectiveCamera(fov, aspect, near, far);
         this.camera_.position.set(0, 8, 0);
         this.scene_ = new THREE.Scene();
 
 
-        this.renderTarget_ = new THREE.WebGLRenderTarget( window.innerWidth,  0.7*window.innerHeight);
-        this.mirrorCamera_ = new THREE.PerspectiveCamera(fov, this.renderTarget_.width / this.renderTarget_.height, near, far);
-        this.mirrorCamera_.position.set(0, 3, 0);
-
+        this.renderTarget_ = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+        this.refractRenderTarget_ = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+        this.mirrorCamera_ = new THREE.PerspectiveCamera(50, this.renderTarget_.width / this.renderTarget_.height, near, far);
+        this.mirrorCamera_.position.set(0, 2, 0);
+        this.refractCamera_ = new THREE.PerspectiveCamera(50, this.renderTarget_.width / this.renderTarget_.height, near, far);
+        this.refractCamera_.position.set(0, 2, 0);
 
         this.mirrorScene_ = new THREE.Scene();
 
@@ -292,21 +301,23 @@ class FirstPersonCameraFps {
         this.scene_.add(plane);
 
         const concreteMaterial = this.loadMaterial_('concrete3-', 4);
-        const box = new THREE.Mesh(
-            new THREE.BoxGeometry(4, 4, 4),
-            concreteMaterial);
-        box.position.set(1, 2, -16);
-        box.castShadow = true;
-        box.receiveShadow = true;
-        this.scene_.add(box);
 
-        const box2 = new THREE.Mesh(
-            new THREE.BoxGeometry(4, 4, 4),
+        const spaceMaterial = this.loadMaterial_('space-crate1-', 1);
+        this.sphere = new THREE.Mesh(
+            new THREE.SphereGeometry(2, 32, 16),
             concreteMaterial);
-        box2.position.set(1, 2.5, 16);
-        box2.castShadow = true;
-        box2.receiveShadow = true;
-        this.scene_.add(box2);
+        this.sphere.position.set(1, 2, -16);
+        this.sphere.castShadow = true;
+        this.sphere.receiveShadow = true;
+        this.scene_.add(this.sphere);
+
+        this.box = new THREE.Mesh(
+            new THREE.BoxGeometry(4, 4, 4),
+            spaceMaterial);
+        this.box.position.set(1, 2.5, 16);
+        this.box.castShadow = true;
+        this.box.receiveShadow = true;
+        this.scene_.add(this.box);
 
         // this.waterTex = this.loadMaterialInRenderTarget_('Water-', 5);
         // this.waterTex = new THREE.TextureLoader().load('resources/freepbr/waterpool.jpg');
@@ -329,12 +340,13 @@ class FirstPersonCameraFps {
         const camMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 cameraPosition: { value: this.camera_.position },
-                uTexture: { type: 't', value: this.renderTarget_.texture },
-                uOpacity: { value: 0.8 },
+                // uTexture: { type: 't', value: this.renderTarget_.texture },
+                uTexture: { type: 't', value: this.refractRenderTarget_.texture },
+                uOpacity: { value: 1 },
                 refractiveIndex: { value: 1.5 },
                 u_time: { value: 0.0 }
             },
-              vertexShader:/*glsl*/`
+            vertexShader:/*glsl*/`
 
                 precision highp float;
 
@@ -346,7 +358,7 @@ class FirstPersonCameraFps {
                   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
               `,
-              fragmentShader:/*glsl*/`
+            fragmentShader:/*glsl*/`
 
                 precision highp float;
                 out vec4 FragColor;
@@ -355,21 +367,20 @@ class FirstPersonCameraFps {
                 uniform float uOpacity;
                 uniform float u_time;
                 
-
-
                 void main() {
                    
                    
                     vec4 color = texture2D(uTexture, vUv);
+            
                     FragColor = vec4(color.rgb, color.a * uOpacity); // Aplica a transparência
                 }
               `,
-              transparent: true, // Ativa a transparência
+            transparent: true, // Ativa a transparência
             blending: THREE.NormalBlending, // Modo de blending (pode usar: THREE.AdditiveBlending, etc.)
-             depthWrite: false, // Evita que o plano sobrescreva a profundidade (útil para objetos transparentes)
-             depthTest: true, // Habilita o teste de profundidade
-            
-              
+            depthWrite: false, // Evita que o plano sobrescreva a profundidade (útil para objetos transparentes)
+            depthTest: true, // Habilita o teste de profundidade
+
+
         });
         camMaterial.glslVersion = THREE.GLSL3;
 
@@ -378,13 +389,13 @@ class FirstPersonCameraFps {
             new THREE.BoxGeometry(10, 5, 0),
             camMaterial
         );
-        mirror.position.set(0, 3, 0);
+        mirror.position.set(0, 2, 0);
 
         this.scene_.add(mirror);
 
         // Create Box3 for each mesh in the scene so that we can
         // do some easy intersection tests.
-        const meshes = [plane, box, mirror];
+        const meshes = [plane, this.sphere, this.box, mirror];
 
         this.objects_ = [];
 
@@ -479,10 +490,17 @@ class FirstPersonCameraFps {
         roughnessMap.wrapT = THREE.RepeatWrapping;
         roughnessMap.repeat.set(tiling, tiling);
 
+        const ao = mapLoader.load('resources/freepbr/' + name + 'ao.png');
+        roughnessMap.anisotropy = maxAnisotropy;
+        roughnessMap.wrapS = THREE.RepeatWrapping;
+        roughnessMap.wrapT = THREE.RepeatWrapping;
+        roughnessMap.repeat.set(tiling, tiling);
+
         const material = new THREE.MeshStandardMaterial({
             metalnessMap: metalMap,
             map: albedo,
             normalMap: normalMap,
+            aoMap: ao,
             roughnessMap: roughnessMap,
             displacementMap: displacementMap,
             lightMap: lightMap
@@ -495,42 +513,47 @@ class FirstPersonCameraFps {
 
     }
 
-    loadMaterialInRenderTarget_(name, tiling) {
+    loadMaterialJpg_(name, tiling) {
         const mapLoader = new THREE.TextureLoader();
         const maxAnisotropy = this.renderer_.capabilities.getMaxAnisotropy();
 
-        const albedo = this.renderTarget_.texture;
+        const albedo = mapLoader.load('resources/freepbr/' + name + 'albedo.jpg');
+        albedo.anisotropy = maxAnisotropy;
+        albedo.wrapS = THREE.RepeatWrapping;
+        albedo.wrapT = THREE.RepeatWrapping;
+        albedo.repeat.set(tiling, tiling);
+        albedo.encoding = THREE.sRGBEncoding;
 
-        this.normalMap = mapLoader.load('resources/freepbr/' + name + 'normal.jpg');
+        const normalMap = mapLoader.load('resources/freepbr/' + name + 'normal.png');
+        normalMap.anisotropy = maxAnisotropy;
+        normalMap.wrapS = THREE.RepeatWrapping;
+        normalMap.wrapT = THREE.RepeatWrapping;
+        normalMap.repeat.set(tiling, tiling);
 
-        this.normalMap.wrapS = THREE.RepeatWrapping;
-        this.normalMap.wrapT = THREE.RepeatWrapping;
-        this.normalMap.repeat.set(tiling, tiling);
+        const roughnessMap = mapLoader.load('resources/freepbr/' + name + 'roughness.png');
+        roughnessMap.anisotropy = maxAnisotropy;
+        roughnessMap.wrapS = THREE.RepeatWrapping;
+        roughnessMap.wrapT = THREE.RepeatWrapping;
+        roughnessMap.repeat.set(tiling, tiling);
 
-        this.roughnessMap = mapLoader.load('resources/freepbr/' + name + 'roughness.jpg');
-        this.roughnessMap.wrapS = THREE.RepeatWrapping;
-        this.roughnessMap.wrapT = THREE.RepeatWrapping;
-        this.roughnessMap.repeat.set(tiling, tiling);
+        const lightMap = mapLoader.load('resources/freepbr/' + name + 'light.png');
+        roughnessMap.anisotropy = maxAnisotropy;
+        roughnessMap.wrapS = THREE.RepeatWrapping;
+        roughnessMap.wrapT = THREE.RepeatWrapping;
+        roughnessMap.repeat.set(tiling, tiling);
 
-        this.lightMap = mapLoader.load('resources/freepbr/' + name + 'light.jpg');
-        this.lightMap.anisotropy = maxAnisotropy;
-        this.lightMap.wrapS = THREE.RepeatWrapping;
-        this.lightMap.wrapT = THREE.RepeatWrapping;
-        this.lightMap.repeat.set(tiling, tiling);
+        const displacementMap = mapLoader.load('resources/freepbr/' + name + 'displacement.png');
+        roughnessMap.anisotropy = maxAnisotropy;
+        roughnessMap.wrapS = THREE.RepeatWrapping;
+        roughnessMap.wrapT = THREE.RepeatWrapping;
+        roughnessMap.repeat.set(tiling, tiling);
 
-        this.displacementMap = mapLoader.load('resources/freepbr/' + name + 'displacement.png');
-        this.displacementMap.anisotropy = maxAnisotropy;
-        this.displacementMap.wrapS = THREE.RepeatWrapping;
-        this.displacementMap.wrapT = THREE.RepeatWrapping;
-        this.displacementMap.repeat.set(tiling, tiling);
-
-        const material = new THREE.MeshPhongMaterial({
+        const material = new THREE.MeshStandardMaterial({
             map: albedo,
-            normalMap: this.normalMap,
-            roughnessMap: this.roughnessMap,
-            displacementMap: this.displacementMap,
-            lightMap: this.lightMap,
-            color: 0x16a3da
+            normalMap: normalMap,
+            roughnessMap: roughnessMap,
+            displacementMap: displacementMap,
+            lightMap: lightMap
         });
 
         return material;
@@ -545,6 +568,9 @@ class FirstPersonCameraFps {
 
         // this.mirrorCamera_.aspect = window.innerWidth / window.innerHeight;
         // this.mirrorCamera_.updateProjectionMatrix();
+
+        // this.refractCamera_.aspect = window.innerWidth / window.innerHeight;
+        // this.refractCamera_.updateProjectionMatrix();
 
         this.uiCamera_.left = -this.camera_.aspect;
         this.uiCamera_.right = this.camera_.aspect;
@@ -577,6 +603,9 @@ class FirstPersonCameraFps {
             this.renderer_.autoClear = true;
             this.renderer_.setRenderTarget(this.renderTarget_);
             this.renderer_.render(this.scene_, this.mirrorCamera_);
+            // this.renderer_.setRenderTarget(null);
+            this.renderer_.setRenderTarget(this.refractRenderTarget_);
+            this.renderer_.render(this.scene_, this.refractCamera_);
             this.renderer_.setRenderTarget(null);
             this.renderer_.render(this.scene_, this.camera_);
             this.renderer_.autoClear = false;
@@ -589,9 +618,21 @@ class FirstPersonCameraFps {
     step_(timeElapsed) {
         const timeElapsedS = timeElapsed * 0.001;
 
-        // this.controls_.update(timeElapsedS);
         this.fpsCamera_.update(timeElapsedS);
         this.mirrorCamera_.lookAt(this.camera_.position);
+
+        const direction = new THREE.Vector3();
+        this.camera_.getWorldDirection(direction); // Obtém a direção para onde a câmera está olhando
+
+        const distance = 2000; // 1 metro à frente
+        const frontPosition = this.camera_.position.clone().add(direction.multiplyScalar(distance));
+
+        console.log("POSICAO DA CAMERA", this.camera_.position);
+        console.log("Posicao a frente", frontPosition);
+
+        this.refractCamera_.lookAt(frontPosition);
+        // this.refractCamera_.lookAt(target);
+        // this.refractCamera_.lookAt(new THREE.Vector3(this.camera_.position['x'] * -1, this.camera_.position['y'] * -1, this.camera_.position['z'] * -1));
         // this.waterTex.offset.x += timeElapsedS * 0.01;
         // this.waterTex.offset.y += timeElapsedS * 0.05;
 
