@@ -328,18 +328,21 @@ class FirstPersonCameraFps {
 
         const camMaterial = new THREE.ShaderMaterial({
             uniforms: {
+                cameraPosition: { value: this.camera_.position },
                 uTexture: { type: 't', value: this.renderTarget_.texture },
-                uOpacity: { value: 1.0 } // Define a transparência (0.0 totalmente transparente, 1.0 totalmente opaco)
-                ,cameraPosition: { value: new THREE.Vector3() }
+                uOpacity: { value: 0.8 },
+                refractiveIndex: { value: 1.5 },
+                u_time: { value: 0.0 }
             },
               vertexShader:/*glsl*/`
 
                 precision highp float;
 
+                out vec3 vNormal;
+                out vec3 vPosition;
                 out vec2 vUv;
                 void main() {
                   vUv = uv;
-                
                   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
               `,
@@ -347,17 +350,25 @@ class FirstPersonCameraFps {
 
                 precision highp float;
                 out vec4 FragColor;
-
+                in vec2 vUv;
                 uniform sampler2D uTexture;
                 uniform float uOpacity;
-                in vec3 vReflect;
-                in vec2 vUv;
+                uniform float u_time;
+                
+
+
                 void main() {
+                   
+                   
                     vec4 color = texture2D(uTexture, vUv);
                     FragColor = vec4(color.rgb, color.a * uOpacity); // Aplica a transparência
                 }
               `,
-              transparent: false 
+              transparent: true, // Ativa a transparência
+            blending: THREE.NormalBlending, // Modo de blending (pode usar: THREE.AdditiveBlending, etc.)
+             depthWrite: false, // Evita que o plano sobrescreva a profundidade (útil para objetos transparentes)
+             depthTest: true, // Habilita o teste de profundidade
+            
               
         });
         camMaterial.glslVersion = THREE.GLSL3;
