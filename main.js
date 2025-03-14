@@ -209,6 +209,7 @@ class FirstPersonCamera {
 class FirstPersonCameraFps {
     constructor() {
         this.initialize_();
+
     }
 
     initialize_() {
@@ -257,15 +258,14 @@ class FirstPersonCameraFps {
         this.refractRenderTarget_ = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
         this.mirrorCamera_ = new THREE.PerspectiveCamera(50, this.renderTarget_.width / this.renderTarget_.height, near, far);
         this.mirrorCamera_.position.set(0, 2, 0);
-        this.refractCamera_ = new THREE.PerspectiveCamera(50, this.renderTarget_.width / this.renderTarget_.height, near, far);
-        this.refractCamera_.position.set(0, 2, 0);
+        this.refractCamera_ = new THREE.PerspectiveCamera(40, this.renderTarget_.width / this.renderTarget_.height, near, far);
+        this.refractCamera_.position.set(0, 2., 0);
 
         this.mirrorScene_ = new THREE.Scene();
 
         this.uiCamera_ = new THREE.OrthographicCamera(
             -1, 1, 1 * aspect, -1 * aspect, 1, 1000);
         this.uiScene_ = new THREE.Scene();
-
 
     }
 
@@ -319,83 +319,120 @@ class FirstPersonCameraFps {
         this.box.receiveShadow = true;
         this.scene_.add(this.box);
 
-        // this.waterTex = this.loadMaterialInRenderTarget_('Water-', 5);
-        // this.waterTex = new THREE.TextureLoader().load('resources/freepbr/waterpool.jpg');
-        // this.waterTex.wrapS = THREE.RepeatWrapping;
-        // this.waterTex.wrapT = THREE.RepeatWrapping;
-        // const waterMaterial = new THREE.MeshPhongMaterial({
-        //     map: this.waterTex,
-        //     transparent: true,
-        //     opacity: 0.8
-        // });
+        this.shadow = new THREE.Mesh(
+            new THREE.SphereGeometry(2., 32, 16),
+            spaceMaterial);
+        this.shadow.position.set(1, 3, 5);
+        this.shadow.castShadow = true;
+        this.shadow.receiveShadow = true;
+        this.scene_.add(this.shadow);
+        this.shadow.visible= false;
 
-        // const waterplane = new THREE.Mesh(
-        //     new THREE.BoxGeometry(10, 5, 0.01),
-        //     waterMaterial
-        // );
+        const watertext = new THREE.TextureLoader().load('resources/freepbr/waterpool.jpg');
+        watertext.wrapS = THREE.RepeatWrapping;
+        watertext.wrapT = THREE.RepeatWrapping;
 
-        // waterplane.position.set(0, 3, 0);
-        // this.scene_.add(waterplane);
-
-        const camMaterial = new THREE.ShaderMaterial({
+        this.camMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 cameraPosition: { value: this.camera_.position },
-                // uTexture: { type: 't', value: this.renderTarget_.texture },
-                uTexture: { type: 't', value: this.refractRenderTarget_.texture },
+                uTexture: { type: 't', value: this.renderTarget_.texture },
+                rTexture: { type: 't', value: this.refractRenderTarget_.texture },
+                wTexture: { type: 't', value: watertext },
+
                 uOpacity: { value: 1 },
-                refractiveIndex: { value: 1.5 },
+                refractionRatio: { value: 1.33 }, 
                 u_time: { value: 0.0 }
             },
             vertexShader:/*glsl*/`
 
                 precision highp float;
-
+                out vec3 vViewPosition;
+                out vec3 vCameraPosition;
                 out vec3 vNormal;
-                out vec3 vPosition;
                 out vec2 vUv;
+
                 void main() {
                   vUv = uv;
+                
+                  vNormal = normalize(normalMatrix * normal);
+                  vCameraPosition = cameraPosition;
+                  vViewPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+
                   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
               `,
             fragmentShader:/*glsl*/`
-
+               
                 precision highp float;
                 out vec4 FragColor;
+
                 in vec2 vUv;
+                in vec3 vNormal;
+                in vec3 vViewPosition;
+                in vec3 vCameraPosition;
+
                 uniform sampler2D uTexture;
+                uniform sampler2D rTexture;
+                uniform sampler2D wTexture;
+
+                uniform float refractionRatio;
+
                 uniform float uOpacity;
                 uniform float u_time;
+
+
+                vec3 refractVector(vec3 incident, vec3 normal, float eta) {
+                    float cosi = dot(incident, normal);
+                    float etai = 0.1;  // Índice de refração do ar
+                    float etat = eta;  // Índice de refração da água
+                    float etaT = etai / etat;
+                    float k = 1.0 - etaT * etaT * (1. - cosi * cosi);
+                    return etaT * incident - (etaT * cosi + sqrt(k)) * normal;
+                }
+
+                float noise(vec2 p) {
+                    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+                }
                 
                 void main() {
-                   
-                   
-                    vec4 color = texture2D(uTexture, vUv);
-            
-                    FragColor = vec4(color.rgb, color.a * uOpacity); // Aplica a transparência
+
+                    vec2 pos = vUv * 10.0;
+                    float n = noise(pos + u_time * 0.1);
+                    float wave = sin(pos.x + u_time) * 0.1 + sin(pos.y + u_time * 1.5) * 0.1;
+                    
+                    vec3 viewDir = normalize(vCameraPosition - vViewPosition);
+                  
+                    vec3 refracted = refractVector(viewDir, vNormal, refractionRatio);
+
+                    vec4 refractedColor = texture2D(rTexture, vUv +  refracted.xy * 0.1); 
+
+                    vec4 reflectedColor = texture2D(uTexture, vUv);
+                    vec2 uvOffset = sin(vUv + u_time*0.02 ) + sin(fract(u_time*0.02));  
+                    vec4 waterColor = texture2D(wTexture, uvOffset);
+
+                    // Depois, mistura o resultado com texture3
+                    vec4 finalColor = mix(waterColor, reflectedColor, 0.2);
+                    finalColor = mix(finalColor, refractedColor, 0.3);
+                    vec3 final = finalColor.rgb + wave*0.8 + n * 0.2;
+                    
+                    FragColor = vec4(final.rgb, finalColor.a * uOpacity); 
                 }
               `,
-            transparent: true, // Ativa a transparência
-            blending: THREE.NormalBlending, // Modo de blending (pode usar: THREE.AdditiveBlending, etc.)
-            depthWrite: false, // Evita que o plano sobrescreva a profundidade (útil para objetos transparentes)
-            depthTest: true, // Habilita o teste de profundidade
-
-
         });
-        camMaterial.glslVersion = THREE.GLSL3;
+        this.camMaterial.glslVersion = THREE.GLSL3;
 
 
-        const mirror = new THREE.Mesh(
+        this.mirror = new THREE.Mesh(
             new THREE.BoxGeometry(10, 5, 0),
-            camMaterial
+            this.camMaterial
         );
-        mirror.position.set(0, 2, 0);
+        this.mirror.position.set(0, 2, 0);
 
-        this.scene_.add(mirror);
+        this.scene_.add(this.mirror);
 
         // Create Box3 for each mesh in the scene so that we can
         // do some easy intersection tests.
-        const meshes = [plane, this.sphere, this.box, mirror];
+        const meshes = [plane, this.sphere, this.box, this.mirror];
 
         this.objects_ = [];
 
@@ -446,6 +483,9 @@ class FirstPersonCameraFps {
         light.color.setHSL(0.6, 1, 0.6);
         light.groundColor.setHSL(0.095, 1, 0.75);
         light.position.set(0, 4, 0);
+        this.scene_.add(light);
+
+        light = new THREE.AmbientLight(0x404040);
         this.scene_.add(light);
     }
 
@@ -601,11 +641,12 @@ class FirstPersonCameraFps {
 
             this.step_(t - this.previousRAF_);
             this.renderer_.autoClear = true;
+            this.mirror.visible = false;
             this.renderer_.setRenderTarget(this.renderTarget_);
             this.renderer_.render(this.scene_, this.mirrorCamera_);
-            // this.renderer_.setRenderTarget(null);
             this.renderer_.setRenderTarget(this.refractRenderTarget_);
             this.renderer_.render(this.scene_, this.refractCamera_);
+            this.mirror.visible = true;
             this.renderer_.setRenderTarget(null);
             this.renderer_.render(this.scene_, this.camera_);
             this.renderer_.autoClear = false;
@@ -615,26 +656,38 @@ class FirstPersonCameraFps {
         });
     }
 
+    rotateOBj(timeElapsedS){
+
+        this.sphere.rotation.y  += timeElapsedS;
+        this.sphere.rotation.x += timeElapsedS;
+
+        this.box.rotation.y  += timeElapsedS;
+        this.box.rotation.x += timeElapsedS;
+        
+    }
     step_(timeElapsed) {
         const timeElapsedS = timeElapsed * 0.001;
 
         this.fpsCamera_.update(timeElapsedS);
         this.mirrorCamera_.lookAt(this.camera_.position);
 
-        const direction = new THREE.Vector3();
-        this.camera_.getWorldDirection(direction); // Obtém a direção para onde a câmera está olhando
+        this.camMaterial.uniforms.u_time.value += timeElapsedS;
 
-        const distance = 2000; // 1 metro à frente
-        const frontPosition = this.camera_.position.clone().add(direction.multiplyScalar(distance));
+        const distancia = 50;
 
-        console.log("POSICAO DA CAMERA", this.camera_.position);
-        console.log("Posicao a frente", frontPosition);
+        // Obtenha a posição da câmera
+        const cameraPosition = this.camera_.position.clone();
 
-        this.refractCamera_.lookAt(frontPosition);
-        // this.refractCamera_.lookAt(target);
-        // this.refractCamera_.lookAt(new THREE.Vector3(this.camera_.position['x'] * -1, this.camera_.position['y'] * -1, this.camera_.position['z'] * -1));
-        // this.waterTex.offset.x += timeElapsedS * 0.01;
-        // this.waterTex.offset.y += timeElapsedS * 0.05;
+        // Obtenha a direção que a câmera está olhando (em coordenadas globais)
+        const cameraDirection = new THREE.Vector3();
+        this.camera_.getWorldDirection(cameraDirection);
+
+        this.shadow.position.copy(cameraPosition).add(cameraDirection.multiplyScalar(distancia));
+        const backPosition = new THREE.Vector3(this.camera_.position['x'] * - 1500, this.camera_.position['y'] * - 1500, this.camera_.position['z'] *-1500);
+
+        this.refractCamera_.lookAt(this.shadow.position);
+
+        this.rotateOBj(timeElapsedS);
 
     }
 }
@@ -642,60 +695,4 @@ let _APP = null;
 
 window.addEventListener('DOMContentLoaded', () => {
     _APP = new FirstPersonCameraFps();
-});
-
-
-
-// Criando um material de shader personalizado
-const fresnelShader = new THREE.ShaderMaterial({
-    uniforms: {
-        skybox: { value: null },      // Textura do ambiente (cubeMap)
-        textureMap: { value: null },  // Textura da superfície
-        cameraPosition: { value: new THREE.Vector3() },
-        reflectance: { value: 0.02 } // F0 para vidro (0.02 a 0.04)
-    },
-    vertexShader: `
-        varying vec3 vNormal;
-        varying vec3 vViewDir;
-        varying vec3 vWorldPosition;
-
-        void main() {
-            vNormal = normalize(normalMatrix * normal);
-            vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-            vViewDir = normalize(cameraPosition - vWorldPosition);
-
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `,
-    fragmentShader: `
-        uniform samplerCube skybox;
-        uniform sampler2D textureMap;
-        uniform vec3 cameraPosition;
-        uniform float reflectance;
-
-        varying vec3 vNormal;
-        varying vec3 vViewDir;
-        varying vec3 vWorldPosition;
-
-        void main() {
-            vec3 N = normalize(vNormal);
-            vec3 V = normalize(vViewDir);
-            
-            // Reflexão da câmera no ambiente
-            vec3 R = reflect(-V, N);
-            vec3 reflectionColor = texture(skybox, R).rgb;
-            
-            // Fresnel usando a equação de Schlick
-            float cosTheta = max(dot(N, V), 0.0);
-            float fresnel = reflectance + (1.0 - reflectance) * pow(1.0 - cosTheta, 5.0);
-
-            // Cor da textura base
-            vec3 refractionColor = texture(textureMap, vWorldPosition.xy).rgb;
-
-            // Mistura entre reflexão e refração
-            vec3 finalColor = mix(refractionColor, reflectionColor, fresnel);
-
-            gl_FragColor = vec4(finalColor, 1.0);
-        }
-    `
 });
