@@ -1,1 +1,6 @@
 # WaterShaderCG
+
+
+# Controles
+* W,A,S,D MOVE O PERSONAGEM
+* ESPAÇO FAZ ELE VOAR(ESTILO JETPACK)

@@ -174,12 +174,12 @@ class FirstPersonCamera {
         left.applyQuaternion(qx);
         left.multiplyScalar(strafeVelocity * timeElapsedS * 10);
 
-        const up = new THREE.Vector3(0, 1, 0); // Alterado para subir corretamente
-        up.multiplyScalar(upVelocity * timeElapsedS * 5);
+        const up = new THREE.Vector3(0, 1, 0);
+        up.multiplyScalar(upVelocity * timeElapsedS * 0.8);
 
         this.translation_.add(forward);
         this.translation_.add(left);
-        // this.translation_.add(up); adiciona voar
+        this.translation_.add(up); //adiciona voar
 
         if (forwardVelocity != 0 || strafeVelocity != 0) {
             this.headBobActive_ = true;
@@ -326,12 +326,13 @@ class FirstPersonCameraFps {
         this.shadow.castShadow = true;
         this.shadow.receiveShadow = true;
         this.scene_.add(this.shadow);
-        this.shadow.visible= false;
+        this.shadow.visible = false;
 
         const watertext = new THREE.TextureLoader().load('resources/freepbr/waterpool.jpg');
         watertext.wrapS = THREE.RepeatWrapping;
         watertext.wrapT = THREE.RepeatWrapping;
 
+        //SHADER CUSTOMIZADO
         this.camMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 cameraPosition: { value: this.camera_.position },
@@ -340,7 +341,9 @@ class FirstPersonCameraFps {
                 wTexture: { type: 't', value: watertext },
 
                 uOpacity: { value: 1 },
-                refractionRatio: { value: 1.33 }, 
+                waterAlph: { value: 0.2 },
+                reflectionAlph: { value: 0.3 },
+                refractionRatio: { value: 1.33 },
                 u_time: { value: 0.0 }
             },
             vertexShader:/*glsl*/`
@@ -374,7 +377,8 @@ class FirstPersonCameraFps {
                 uniform sampler2D uTexture;
                 uniform sampler2D rTexture;
                 uniform sampler2D wTexture;
-
+                uniform float waterAlph;
+                uniform float reflectionAlph;
                 uniform float refractionRatio;
 
                 uniform float uOpacity;
@@ -411,8 +415,8 @@ class FirstPersonCameraFps {
                     vec4 waterColor = texture2D(wTexture, uvOffset);
 
                     // Depois, mistura o resultado com texture3
-                    vec4 finalColor = mix(waterColor, reflectedColor, 0.2);
-                    finalColor = mix(finalColor, refractedColor, 0.3);
+                    vec4 finalColor = mix(waterColor, reflectedColor, waterAlph);
+                    finalColor = mix(finalColor, refractedColor, reflectionAlph);
                     vec3 final = finalColor.rgb + wave*0.8 + n * 0.2;
                     
                     FragColor = vec4(final.rgb, finalColor.a * uOpacity); 
@@ -430,8 +434,7 @@ class FirstPersonCameraFps {
 
         this.scene_.add(this.mirror);
 
-        // Create Box3 for each mesh in the scene so that we can
-        // do some easy intersection tests.
+
         const meshes = [plane, this.sphere, this.box, this.mirror];
 
         this.objects_ = [];
@@ -452,8 +455,6 @@ class FirstPersonCameraFps {
         this.sprite_.position.set(0, 0, -10);
 
         this.uiScene_.add(this.sprite_);
-
-        // Mirror
 
         this.mirrorScene_ = this.scene_;
     }
@@ -619,20 +620,6 @@ class FirstPersonCameraFps {
         this.renderer_.setSize(window.innerWidth, window.innerHeight);
     }
 
-    moveWater(timeElapsed) {
-
-        this.normalMap.offset.x += timeElapsed;
-        this.normalMap.offset.y += timeElapsed;
-
-        this.roughnessMap.offset.x += timeElapsed;
-        this.roughnessMap.offset.y += timeElapsed;
-
-        this.lightMap.offset.x += timeElapsed;
-        this.lightMap.offset.y += timeElapsed;
-
-        this.displacementMap.offset.x += timeElapsed;
-        this.displacementMap.offset.y += timeElapsed;
-    }
     raf_() {
         requestAnimationFrame((t) => {
             if (this.previousRAF_ === null) {
@@ -656,14 +643,14 @@ class FirstPersonCameraFps {
         });
     }
 
-    rotateOBj(timeElapsedS){
+    rotateOBj(timeElapsedS) {
 
-        this.sphere.rotation.y  += timeElapsedS;
+        this.sphere.rotation.y += timeElapsedS;
         this.sphere.rotation.x += timeElapsedS;
 
-        this.box.rotation.y  += timeElapsedS;
+        this.box.rotation.y += timeElapsedS;
         this.box.rotation.x += timeElapsedS;
-        
+
     }
     step_(timeElapsed) {
         const timeElapsedS = timeElapsed * 0.001;
@@ -683,7 +670,7 @@ class FirstPersonCameraFps {
         this.camera_.getWorldDirection(cameraDirection);
 
         this.shadow.position.copy(cameraPosition).add(cameraDirection.multiplyScalar(distancia));
-        const backPosition = new THREE.Vector3(this.camera_.position['x'] * - 1500, this.camera_.position['y'] * - 1500, this.camera_.position['z'] *-1500);
+        const backPosition = new THREE.Vector3(this.camera_.position['x'] * - 1500, this.camera_.position['y'] * - 1500, this.camera_.position['z'] * -1500);
 
         this.refractCamera_.lookAt(this.shadow.position);
 
